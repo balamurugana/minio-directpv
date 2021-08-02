@@ -40,7 +40,7 @@ type DriveUpdateType int
 
 const (
 	DriveUpdateTypeOwnAndFormat DriveUpdateType = iota + 1
-	DriveUpdateTypeUnknown
+	DriveUpdateTypeNoOp
 )
 
 type DriveEventHandler struct {
@@ -120,7 +120,7 @@ func (handler *DriveEventHandler) update(ctx context.Context, drive *directcsi.D
 		if ownAndFormat(ctx, drive) {
 			return DriveUpdateTypeOwnAndFormat
 		}
-		return DriveUpdateTypeUnknown
+		return DriveUpdateTypeNoOp
 	}
 
 	isDuplicateUUID := func(ctx context.Context, driveName, fsUUID string) (bool, error) {
@@ -291,8 +291,7 @@ func (handler *DriveEventHandler) update(ctx context.Context, drive *directcsi.D
 			}
 			return updateErr
 		}
-	case DriveUpdateTypeUnknown:
-		return fmt.Errorf("Unknown update type")
+	case DriveUpdateTypeNoOp:
 	}
 	return nil
 }

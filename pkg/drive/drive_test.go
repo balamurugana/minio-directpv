@@ -112,7 +112,7 @@ func createFakeDriveEventListener() *DriveEventHandler {
 	}
 }
 
-func TestAddDriveNoOp(t *testing.T) {
+func TestUpdateDriveNoOp(t *testing.T) {
 	dl := createFakeDriveEventListener()
 	b := directcsi.DirectCSIDrive{
 		TypeMeta: utils.DirectCSIDriveTypeMeta(),
@@ -125,7 +125,7 @@ func TestAddDriveNoOp(t *testing.T) {
 	ctx := context.TODO()
 	err := dl.update(ctx, &b)
 	if err != nil {
-		t.Errorf("Error returned [Update]: %+v", err)
+		t.Errorf("Error returned [NoOP]: %+v", err)
 	}
 }
 
