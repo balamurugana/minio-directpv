@@ -123,9 +123,9 @@ func TestAddDriveNoOp(t *testing.T) {
 		Status: directcsi.DirectCSIDriveStatus{},
 	}
 	ctx := context.TODO()
-	err := dl.Add(ctx, &b)
+	err := dl.update(ctx, &b)
 	if err != nil {
-		t.Errorf("Error returned [Add]: %+v", err)
+		t.Errorf("Error returned [Update]: %+v", err)
 	}
 }
 
@@ -254,7 +254,7 @@ func TestDriveFormat(t *testing.T) {
 		}
 
 		// Step 4: Execute the Update hook
-		if err := dl.Update(ctx, dObj, newObj); err != nil {
+		if err := dl.update(ctx, newObj); err != nil {
 			t.Errorf("Test case [%d]: Error while invoking the update listener: %+v", i, err)
 		}
 
@@ -419,7 +419,7 @@ func TestDriveDelete(t *testing.T) {
 
 			now := metav1.Now()
 			newObj.ObjectMeta.DeletionTimestamp = &now
-			if err := dl.Delete(ctx, newObj); err != nil && !tt.expectErr {
+			if err := dl.delete(ctx, newObj); err != nil && !tt.expectErr {
 				t.Errorf("Error while invoking the update listener: %+v", err)
 			}
 

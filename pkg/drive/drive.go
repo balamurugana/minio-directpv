@@ -99,27 +99,25 @@ func (handler *DriveEventHandler) ObjectType() runtime.Object {
 
 func (handler *DriveEventHandler) Handle(ctx context.Context, args listener2.EventArgs) error {
 	switch args.Event {
-	case listener2.AddEvent:
-		return handler.update(ctx, nil, args.Object.(*directcsi.DirectCSIDrive))
-	case listener2.UpdateEvent:
-		return handler.update(ctx, args.OldObject.(*directcsi.DirectCSIDrive), args.Object.(*directcsi.DirectCSIDrive))
+	case listener2.AddEvent, listener2.UpdateEvent:
+		return handler.update(ctx, args.Object.(*directcsi.DirectCSIDrive))
 	case listener2.DeleteEvent:
 		return handler.delete(ctx, args.Object.(*directcsi.DirectCSIDrive))
 	}
 	return nil
 }
 
-func (handler *DriveEventHandler) update(ctx context.Context, _, new *directcsi.DirectCSIDrive) error {
+func (handler *DriveEventHandler) update(ctx context.Context, drive *directcsi.DirectCSIDrive) error {
 	directCSIClient := handler.directCSIClient.DirectV1beta2()
 
-	klog.V(5).Infof("drive update called on %s", new.Name)
+	klog.V(5).Infof("drive update called on %s", drive.Name)
 
-	ownAndFormat := func(ctx context.Context, new *directcsi.DirectCSIDrive) bool {
-		return new.Spec.DirectCSIOwned && new.Spec.RequestedFormat != nil
+	ownAndFormat := func(ctx context.Context, drive *directcsi.DirectCSIDrive) bool {
+		return drive.Spec.DirectCSIOwned && drive.Spec.RequestedFormat != nil
 	}
 
-	driveUpdateType := func(ctx context.Context, new *directcsi.DirectCSIDrive) DriveUpdateType {
-		if ownAndFormat(ctx, new) {
+	driveUpdateType := func(ctx context.Context, drive *directcsi.DirectCSIDrive) DriveUpdateType {
+		if ownAndFormat(ctx, drive) {
 			return DriveUpdateTypeOwnAndFormat
 		}
 		return DriveUpdateTypeUnknown
@@ -146,12 +144,12 @@ func (handler *DriveEventHandler) update(ctx context.Context, _, new *directcsi.
 	}
 
 	getFileSystemUUID := func() (string, error) {
-		UUID := new.Status.FilesystemUUID
+		UUID := drive.Status.FilesystemUUID
 		if UUID == "" {
 			UUID = uuid.New().String()
 		} else {
 			// Check if the FilesystemUUID is already taken by other drives in the same node
-			isDup, err := isDuplicateUUID(ctx, new.Name, UUID)
+			isDup, err := isDuplicateUUID(ctx, drive.Name, UUID)
 			if err != nil {
 				return "", err
 			}
@@ -163,20 +161,20 @@ func (handler *DriveEventHandler) update(ctx context.Context, _, new *directcsi.
 	}
 
 	var updateErr error
-	switch driveUpdateType(ctx, new) {
+	switch driveUpdateType(ctx, drive) {
 	case DriveUpdateTypeOwnAndFormat:
-		klog.V(3).Infof("owning and formatting drive %s", new.Name)
-		force := new.Spec.RequestedFormat.Force
-		mounted := new.Status.Mountpoint != ""
-		formatted := new.Status.Filesystem != ""
+		klog.V(3).Infof("owning and formatting drive %s", drive.Name)
+		force := drive.Spec.RequestedFormat.Force
+		mounted := drive.Status.Mountpoint != ""
+		formatted := drive.Status.Filesystem != ""
 
-		switch new.Status.DriveStatus {
+		switch drive.Status.DriveStatus {
 		case directcsi.DriveStatusReleased,
 			directcsi.DriveStatusUnavailable,
 			directcsi.DriveStatusReady,
 			directcsi.DriveStatusTerminating,
 			directcsi.DriveStatusInUse:
-			klog.V(3).Infof("rejected request to format a %s drive: %s", string(new.Status.DriveStatus), new.Name)
+			klog.V(3).Infof("rejected request to format a %s drive: %s", string(drive.Status.DriveStatus), drive.Name)
 			return nil
 		case directcsi.DriveStatusAvailable:
 			UUID, err := getFileSystemUUID()
@@ -184,38 +182,38 @@ func (handler *DriveEventHandler) update(ctx context.Context, _, new *directcsi.
 				klog.Error(err)
 				return err
 			}
-			new.Status.FilesystemUUID = UUID
-			directCSIPath := sys.GetDirectCSIPath(new.Status.FilesystemUUID)
-			directCSIMount := filepath.Join(sys.MountRoot, new.Status.FilesystemUUID)
-			if err := handler.formatter.MakeBlockFile(directCSIPath, new.Status.MajorNumber, new.Status.MinorNumber); err != nil {
+			drive.Status.FilesystemUUID = UUID
+			directCSIPath := sys.GetDirectCSIPath(drive.Status.FilesystemUUID)
+			directCSIMount := filepath.Join(sys.MountRoot, drive.Status.FilesystemUUID)
+			if err := handler.formatter.MakeBlockFile(directCSIPath, drive.Status.MajorNumber, drive.Status.MinorNumber); err != nil {
 				klog.Error(err)
 				updateErr = err
 			}
 
 			source := directCSIPath
 			target := directCSIMount
-			mountOpts := new.Spec.RequestedFormat.MountOptions
+			mountOpts := drive.Spec.RequestedFormat.MountOptions
 			if updateErr == nil {
 				if !formatted || force {
 					if mounted {
 						if err := handler.mounter.UnmountDrive(source); err != nil {
-							err = fmt.Errorf("failed to unmount drive: %s %v", new.Name, err)
+							err = fmt.Errorf("failed to unmount drive: %s %v", drive.Name, err)
 							klog.Error(err)
 							updateErr = err
 						} else {
-							new.Status.Mountpoint = ""
+							drive.Status.Mountpoint = ""
 							mounted = false
 						}
 					}
 
 					if updateErr == nil {
-						if err := handler.formatter.FormatDrive(ctx, new.Status.FilesystemUUID, source, force); err != nil {
-							err = fmt.Errorf("failed to format drive: %s %v", new.Name, err)
+						if err := handler.formatter.FormatDrive(ctx, drive.Status.FilesystemUUID, source, force); err != nil {
+							err = fmt.Errorf("failed to format drive: %s %v", drive.Name, err)
 							klog.Error(err)
 							updateErr = err
 						} else {
-							new.Status.Filesystem = string(sys.FSTypeXFS)
-							new.Status.AllocatedCapacity = int64(0)
+							drive.Status.Filesystem = string(sys.FSTypeXFS)
+							drive.Status.AllocatedCapacity = int64(0)
 							formatted = true
 						}
 					}
@@ -225,26 +223,26 @@ func (handler *DriveEventHandler) update(ctx context.Context, _, new *directcsi.
 			if updateErr == nil {
 				if formatted && !mounted {
 					if err := handler.mounter.MountDrive(source, target, mountOpts); err != nil {
-						err = fmt.Errorf("failed to mount drive: %s %v", new.Name, err)
+						err = fmt.Errorf("failed to mount drive: %s %v", drive.Name, err)
 						klog.Error(err)
 						updateErr = err
 					} else {
-						new.Status.Mountpoint = target
-						new.Status.MountOptions = mountOpts
-						freeCapacity, sErr := handler.statter.GetFreeCapacityFromStatfs(new.Status.Mountpoint)
+						drive.Status.Mountpoint = target
+						drive.Status.MountOptions = mountOpts
+						freeCapacity, sErr := handler.statter.GetFreeCapacityFromStatfs(drive.Status.Mountpoint)
 						if sErr != nil {
 							klog.Error(sErr)
 							updateErr = sErr
 						} else {
 							mounted = true
-							new.Status.FreeCapacity = freeCapacity
-							new.Status.AllocatedCapacity = new.Status.TotalCapacity - new.Status.FreeCapacity
+							drive.Status.FreeCapacity = freeCapacity
+							drive.Status.AllocatedCapacity = drive.Status.TotalCapacity - drive.Status.FreeCapacity
 						}
 					}
 				}
 			}
 
-			utils.UpdateCondition(new.Status.Conditions,
+			utils.UpdateCondition(drive.Status.Conditions,
 				string(directcsi.DirectCSIDriveConditionOwned),
 				utils.BoolToCondition(formatted && mounted),
 				string(directcsi.DirectCSIDriveReasonAdded),
@@ -255,7 +253,7 @@ func (handler *DriveEventHandler) update(ctx context.Context, _, new *directcsi.
 					return ""
 				}(),
 			)
-			utils.UpdateCondition(new.Status.Conditions,
+			utils.UpdateCondition(drive.Status.Conditions,
 				string(directcsi.DirectCSIDriveConditionMounted),
 				utils.BoolToCondition(mounted),
 				string(directcsi.DirectCSIDriveReasonAdded),
@@ -266,7 +264,7 @@ func (handler *DriveEventHandler) update(ctx context.Context, _, new *directcsi.
 					return string(directcsi.DirectCSIDriveMessageNotMounted)
 				}(),
 			)
-			utils.UpdateCondition(new.Status.Conditions,
+			utils.UpdateCondition(drive.Status.Conditions,
 				string(directcsi.DirectCSIDriveConditionFormatted),
 				utils.BoolToCondition(formatted),
 				string(directcsi.DirectCSIDriveReasonAdded),
@@ -279,14 +277,14 @@ func (handler *DriveEventHandler) update(ctx context.Context, _, new *directcsi.
 			)
 
 			if updateErr == nil {
-				new.Finalizers = []string{
+				drive.Finalizers = []string{
 					directcsi.DirectCSIDriveFinalizerDataProtection,
 				}
-				new.Status.DriveStatus = directcsi.DriveStatusReady
-				new.Spec.RequestedFormat = nil
+				drive.Status.DriveStatus = directcsi.DriveStatusReady
+				drive.Spec.RequestedFormat = nil
 			}
 
-			if new, err = directCSIClient.DirectCSIDrives().Update(ctx, new, metav1.UpdateOptions{
+			if drive, err = directCSIClient.DirectCSIDrives().Update(ctx, drive, metav1.UpdateOptions{
 				TypeMeta: utils.DirectCSIDriveTypeMeta(),
 			}); err != nil {
 				return err
@@ -299,18 +297,18 @@ func (handler *DriveEventHandler) update(ctx context.Context, _, new *directcsi.
 	return nil
 }
 
-func (handler *DriveEventHandler) delete(ctx context.Context, obj *directcsi.DirectCSIDrive) error {
+func (handler *DriveEventHandler) delete(ctx context.Context, drive *directcsi.DirectCSIDrive) error {
 	directCSIClient := handler.directCSIClient.DirectV1beta2()
-	if obj.Status.DriveStatus != directcsi.DriveStatusTerminating {
-		obj.Status.DriveStatus = directcsi.DriveStatusTerminating
-		if _, err := directCSIClient.DirectCSIDrives().Update(ctx, obj, metav1.UpdateOptions{
+	if drive.Status.DriveStatus != directcsi.DriveStatusTerminating {
+		drive.Status.DriveStatus = directcsi.DriveStatusTerminating
+		if _, err := directCSIClient.DirectCSIDrives().Update(ctx, drive, metav1.UpdateOptions{
 			TypeMeta: utils.DirectCSIDriveTypeMeta(),
 		}); err != nil {
 			return err
 		}
 	}
 
-	finalizers := obj.GetFinalizers()
+	finalizers := drive.GetFinalizers()
 	if len(finalizers) == 0 {
 		return nil
 	}
@@ -321,20 +319,20 @@ func (handler *DriveEventHandler) delete(ctx context.Context, obj *directcsi.Dir
 	finalizer := finalizers[0]
 
 	if finalizer != directcsi.DirectCSIDriveFinalizerDataProtection {
-		return fmt.Errorf("invalid state reached. Please contact subnet.min.io")
+		return fmt.Errorf("invalid state reached. Report this issue at https://github.com/minio/direct-csi/issues")
 	}
 
-	if err := sys.SafeUnmount(filepath.Join(sys.MountRoot, obj.Name), nil); err != nil {
+	if err := sys.SafeUnmount(filepath.Join(sys.MountRoot, drive.Name), nil); err != nil {
 		return err
 	}
 
-	obj.Finalizers = []string{}
-	if _, err := directCSIClient.DirectCSIDrives().Update(ctx, obj, metav1.UpdateOptions{
-		TypeMeta: utils.DirectCSIDriveTypeMeta(),
-	}); err != nil {
-		return err
-	}
-	return nil
+	drive.Finalizers = []string{}
+	_, err := directCSIClient.DirectCSIDrives().Update(
+		ctx, drive, metav1.UpdateOptions{
+			TypeMeta: utils.DirectCSIDriveTypeMeta(),
+		},
+	)
+	return err
 }
 
 func StartController(ctx context.Context, nodeID string) error {
