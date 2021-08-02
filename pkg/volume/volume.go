@@ -28,7 +28,6 @@ import (
 	"github.com/minio/direct-csi/pkg/utils"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
@@ -63,18 +62,20 @@ func NewVolumeEventHandler(nodeID string) *VolumeEventHandler {
 }
 
 func (handler *VolumeEventHandler) ListerWatcher() cache.ListerWatcher {
-	fieldSelector := fields.Everything()
+	labelSelector := ""
 	if handler.nodeID != "" {
-		fieldSelector = fields.OneTermEqualSelector(
-			utils.NodeLabel, utils.SanitizeLabelV(handler.nodeID),
-		)
+		labelSelector = fmt.Sprintf("%s=%s", utils.NodeLabel, utils.SanitizeLabelV(handler.nodeID))
 	}
 
-	return cache.NewListWatchFromClient(
+	optionsModifier := func(options *metav1.ListOptions) {
+		options.LabelSelector = labelSelector
+	}
+
+	return cache.NewFilteredListWatchFromClient(
 		handler.directCSIClient.DirectV1beta2().RESTClient(),
 		"DirectCSIVolumes",
 		"",
-		fieldSelector,
+		optionsModifier,
 	)
 }
 

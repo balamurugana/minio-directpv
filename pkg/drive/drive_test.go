@@ -96,15 +96,15 @@ func (c *fakeDriveMounter) UnmountDrive(path string) error {
 	return nil
 }
 
-func createFakeDriveListener() *DirectCSIDriveListener {
+func createFakeDriveEventListener() *DriveEventHandler {
 	utils.SetFake()
 
 	fakeKubeClnt := utils.GetKubeClient()
 	fakeDirectCSIClnt := utils.GetDirectClientset()
 
-	return &DirectCSIDriveListener{
+	return &DriveEventHandler{
 		kubeClient:      fakeKubeClnt,
-		directcsiClient: fakeDirectCSIClnt,
+		directCSIClient: fakeDirectCSIClnt,
 		nodeID:          testNodeID,
 		mounter:         &fakeDriveMounter{},
 		formatter:       &fakeDriveFormatter{},
@@ -112,8 +112,8 @@ func createFakeDriveListener() *DirectCSIDriveListener {
 	}
 }
 
-func TestAddAndDeleteDriveNoOp(t *testing.T) {
-	dl := createFakeDriveListener()
+func TestAddDriveNoOp(t *testing.T) {
+	dl := createFakeDriveEventListener()
 	b := directcsi.DirectCSIDrive{
 		TypeMeta: utils.DirectCSIDriveTypeMeta(),
 		ObjectMeta: metav1.ObjectMeta{
@@ -127,12 +127,6 @@ func TestAddAndDeleteDriveNoOp(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error returned [Add]: %+v", err)
 	}
-
-	err = dl.Delete(ctx, &b)
-	if err != nil {
-		t.Errorf("Error returned [Delete]: %+v", err)
-	}
-
 }
 
 // Sets the requested format in the Spec and checks if desired results are seen.
@@ -237,9 +231,9 @@ func TestDriveFormat(t *testing.T) {
 	ctx := context.TODO()
 
 	// Step 1: Construct fake drive listener
-	dl := createFakeDriveListener()
-	dl.directcsiClient = fakedirect.NewSimpleClientset(testDriveObjs...)
-	directCSIClient := dl.directcsiClient.DirectV1beta2()
+	dl := createFakeDriveEventListener()
+	dl.directCSIClient = fakedirect.NewSimpleClientset(testDriveObjs...)
+	directCSIClient := dl.directCSIClient.DirectV1beta2()
 
 	for i, tObj := range testDriveObjs {
 		dObj := tObj.(*directcsi.DirectCSIDrive)
@@ -353,7 +347,7 @@ func TestDriveFormat(t *testing.T) {
 	}
 }
 
-func TestUpdateDriveDelete(t *testing.T) {
+func TestDriveDelete(t *testing.T) {
 	testCases := []struct {
 		name               string
 		expectErr          bool
@@ -410,9 +404,9 @@ func TestUpdateDriveDelete(t *testing.T) {
 		},
 	}
 	ctx := context.TODO()
-	dl := createFakeDriveListener()
-	dl.directcsiClient = fakedirect.NewSimpleClientset(&testCases[0].driveObject, &testCases[1].driveObject)
-	directCSIClient := dl.directcsiClient.DirectV1beta2()
+	dl := createFakeDriveEventListener()
+	dl.directCSIClient = fakedirect.NewSimpleClientset(&testCases[0].driveObject, &testCases[1].driveObject)
+	directCSIClient := dl.directCSIClient.DirectV1beta2()
 
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -425,7 +419,7 @@ func TestUpdateDriveDelete(t *testing.T) {
 
 			now := metav1.Now()
 			newObj.ObjectMeta.DeletionTimestamp = &now
-			if err := dl.Update(ctx, &tt.driveObject, newObj); err != nil && !tt.expectErr {
+			if err := dl.Delete(ctx, newObj); err != nil && !tt.expectErr {
 				t.Errorf("Error while invoking the update listener: %+v", err)
 			}
 
