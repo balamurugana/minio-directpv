@@ -1,5 +1,9 @@
 # DirectPV
 
+> [!IMPORTANT]
+> ## Maintenance Notice
+> This project is currently under maintenance and is not accepting new changes.
+
 ***It is higher recommended to use the latest version of DirectPV from [MinIO registry](https://quay.io/repository/minio/directpv) and the plugin from [Download page](https://dl.min.io/aistor/directpv/release/)***
 
 [DirectPV](https://github.com/minio/directpv) is a [CSI](https://kubernetes.io/blog/2019/01/15/container-storage-interface-ga/) driver for [Direct Attached Storage](https://en.wikipedia.org/wiki/Direct-attached_storage). In a simpler sense, it is a distributed persistent volume manager, and not a storage system like SAN or NAS. It is useful to *discover, format, mount, schedule and monitor* drives across servers.
